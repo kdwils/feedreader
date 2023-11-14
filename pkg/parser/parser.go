@@ -81,7 +81,6 @@ func (tb *tokenBuffer) handleStartElement(e xml.StartElement) {
 	}
 
 	tb.buffer = ""
-	tb.data = true
 }
 
 func (tb *tokenBuffer) handleEndElement(e xml.EndElement) {
