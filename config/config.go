@@ -11,10 +11,6 @@ import (
 type Config struct {
 }
 
-type ViperUnmarshaler interface {
-	Unmarshal(interface{}, ...viper.DecoderConfigOption) error
-}
-
 func Init(file string) (*Config, error) {
 	v := viper.New()
 	v.SetConfigFile(file)
