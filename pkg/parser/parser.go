@@ -59,18 +59,18 @@ func (fr FeedParser) Parse(reader io.Reader) (*RSSFeed, error) {
 
 		switch t := token.(type) {
 		case xml.StartElement:
-			tb.handleStartElement(t)
+			tb.parseStartElement(t)
 		case xml.EndElement:
-			tb.handleEndElement(t)
+			tb.parseEndElement(t)
 		case xml.CharData:
-			tb.handleCharElement(t)
+			tb.parseCharElement(t)
 		}
 	}
 
 	return tb.feed, nil
 }
 
-func (tb *tokenBuffer) handleStartElement(e xml.StartElement) {
+func (tb *tokenBuffer) parseStartElement(e xml.StartElement) {
 	if e.Name.Local == "item" {
 		tb.openItemTag = true
 		if tb.feed.Channel.Items == nil {
@@ -79,11 +79,10 @@ func (tb *tokenBuffer) handleStartElement(e xml.StartElement) {
 
 		tb.feed.Channel.Items = append(tb.feed.Channel.Items, Item{})
 	}
-
-	tb.buffer = ""
+	tb.reset()
 }
 
-func (tb *tokenBuffer) handleEndElement(e xml.EndElement) {
+func (tb *tokenBuffer) parseEndElement(e xml.EndElement) {
 	// a closing element means we need to reset the buffer after its read because there is no more data to be parsed for that tag
 	defer tb.reset()
 
@@ -129,7 +128,7 @@ func (tb *tokenBuffer) handleEndElement(e xml.EndElement) {
 	}
 }
 
-func (tb *tokenBuffer) handleCharElement(e xml.CharData) {
+func (tb *tokenBuffer) parseCharElement(e xml.CharData) {
 	tb.buffer += string(e)
 }
 
@@ -144,5 +143,10 @@ func (fr FeedParser) ParseFromURI(ctx context.Context, uri string) (*RSSFeed, er
 		return nil, err
 	}
 
-	return fr.Parse(resp.Body)
+	parsed, err := fr.Parse(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return parsed, nil
 }
