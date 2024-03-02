@@ -5,31 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/araddon/dateparse"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"github.com/kdwils/feedreader/pkg/parser"
-	"github.com/kdwils/feedreader/storage"
+	"github.com/kdwils/feedreader/service"
 	"go.uber.org/zap"
 )
 
 type Server struct {
-	Storage storage.Storage
 	logger  *zap.Logger
-	parser  parser.Parser
+	service service.Service
 }
 
-func New(Storage storage.Storage, parser parser.Parser, logger *zap.Logger) Server {
+func New(service service.Service, logger *zap.Logger) Server {
 	return Server{
-		Storage: Storage,
-		parser:  parser,
+		service: service,
 		logger:  logger,
 	}
 }
@@ -94,7 +89,7 @@ func (s Server) CreateFeed() http.HandlerFunc {
 			return
 		}
 
-		var request storage.CreateFeedRequest
+		var request service.CreateFeedRequest
 		err = json.Unmarshal(b, &request)
 		if err != nil {
 			l.Error("failed to unmarshal request body", zap.Error(err), zap.ByteString("body", b))
@@ -102,16 +97,7 @@ func (s Server) CreateFeed() http.HandlerFunc {
 			return
 		}
 
-		parsedFeed, err := s.parser.ParseFromURI(r.Context(), request.Link)
-		if err != nil {
-			l.Error("failed to parse feed", zap.String("link", request.Link), zap.Error(err))
-			http.Error(w, "failed to parse feed", http.StatusInternalServerError)
-			return
-		}
-
-		log.Printf("%+v", parsedFeed.Channel)
-
-		feed, err := s.Storage.CreateFeed(r.Context(), parsedFeed.Channel.Title, request.Link, parsedFeed.Channel.Link, parsedFeed.Channel.Description)
+		feed, err := s.service.CreateFeed(r.Context(), request)
 		if err != nil {
 			l.Error("failed to create feed", zap.Error(err), zap.Any("request", request))
 			http.Error(w, "failed to create feed", http.StatusBadRequest)
@@ -126,7 +112,7 @@ func (s Server) ListFeeds() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		opts := OptionsFromContext(r.Context())
 		l := LoggerFromContext(r.Context(), zap.Any("options", opts))
-		feeds, err := s.Storage.ListFeeds(r.Context(), opts)
+		feeds, err := s.service.ListFeeds(r.Context(), opts)
 		if err != nil {
 			l.Error("failed to list feeds", zap.Error(err))
 			http.Error(w, "failed to list feeds", http.StatusInternalServerError)
@@ -148,7 +134,7 @@ func (s Server) CreateArticle() http.HandlerFunc {
 			return
 		}
 
-		var request storage.CreateArticleRequest
+		var request service.CreateArticleRequest
 		err = json.Unmarshal(b, &request)
 		if err != nil {
 			l.Error("failed to unmarshal request body", zap.Error(err), zap.ByteString("body", b))
@@ -156,14 +142,7 @@ func (s Server) CreateArticle() http.HandlerFunc {
 			return
 		}
 
-		publishedTime, err := dateparse.ParseAny(request.Published)
-		if err != nil {
-			l.Error("failed to parse article published date", zap.Error(err), zap.String("timestamp", request.Published))
-			http.Error(w, "failed to parse article published date", http.StatusBadRequest)
-			return
-		}
-
-		article, err := s.Storage.CreateArticle(r.Context(), request.Link, request.Title, request.Author, request.Description, publishedTime)
+		article, err := s.service.CreateArticle(r.Context(), request)
 		if err != nil {
 			l.Error("failed to create article", zap.Error(err), zap.Any("request", request))
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -178,7 +157,7 @@ func (s Server) ListArticles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		opts := OptionsFromContext(r.Context())
 		l := LoggerFromContext(r.Context(), zap.Any("options", opts))
-		articles, err := s.Storage.ListArticles(r.Context(), opts)
+		articles, err := s.service.ListArticles(r.Context(), opts)
 		if err != nil {
 			l.Error("failed to list articles", zap.Error(err))
 			http.Error(w, "failed to list articles", http.StatusInternalServerError)

@@ -99,6 +99,8 @@ func (tb *tokenBuffer) parseEndElement(e xml.EndElement) {
 		tb.feed.Channel.Items[tb.itemsLen()].PubDate = tb.buffer
 	case "guid":
 		tb.feed.Channel.Items[tb.itemsLen()].GUID = tb.buffer
+	case "author":
+		tb.feed.Channel.Items[tb.itemsLen()].Author = tb.buffer
 	case "title":
 		if tb.openItemTag {
 			tb.feed.Channel.Items[tb.itemsLen()].Title = tb.buffer

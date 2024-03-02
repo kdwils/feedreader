@@ -9,6 +9,7 @@ import (
 type Config struct {
 	SQLite SQLite `mapstructure:"sqlite"`
 	Port   int    `mapstructure:"port"`
+	Poller Poller `mapstructure:"poller"`
 }
 
 func Init(file string) (*Config, error) {

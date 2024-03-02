@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/kdwils/feedreader/config"
 	"github.com/kdwils/feedreader/pkg/parser"
+	"github.com/kdwils/feedreader/poller"
 	"github.com/kdwils/feedreader/server"
+	"github.com/kdwils/feedreader/service"
 	"github.com/kdwils/feedreader/storage"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -35,9 +39,21 @@ var serveCmd = &cobra.Command{
 		}
 		defer store.Close()
 
-		parser := parser.New(http.DefaultClient)
+		interval := c.Poller.Interval
+		if interval == 0 {
+			interval = time.Hour * 1
+		}
 
-		s := server.New(store, parser, logger)
+		ticker := time.NewTicker(interval)
+		parser := parser.New(http.DefaultClient)
+		service := service.New(store, parser)
+
+		if c.Poller.Enabled {
+			poller := poller.New(ticker, service, logger)
+			go poller.Poll(context.TODO())
+		}
+
+		s := server.New(service, logger)
 		s.Serve(c.Port)
 	},
 }

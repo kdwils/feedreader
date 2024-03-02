@@ -73,6 +73,7 @@ func TestFeedReader_Parse(t *testing.T) {
 				Items: []Item{
 					{
 						Title:       "Deploying applications to my cluster using Github Actions and ArgoCD",
+						Author:      "Kyle Wilson",
 						Link:        "https://blog.kyledev.co/posts/ci-and-argocd/",
 						PubDate:     "Tue, 25 Apr 2023 00:00:00 +0000",
 						GUID:        "https://blog.kyledev.co/posts/ci-and-argocd/",
@@ -80,6 +81,7 @@ func TestFeedReader_Parse(t *testing.T) {
 					},
 					{
 						Title:       "Exposing services in my cluster using cloudflare tunnels",
+						Author:      "Kyle Wilson",
 						Link:        "https://blog.kyledev.co/posts/cloudflared-tunnel/",
 						PubDate:     "Thu, 23 Feb 2023 00:00:00 +0000",
 						GUID:        "https://blog.kyledev.co/posts/cloudflared-tunnel/",

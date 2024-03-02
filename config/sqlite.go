@@ -1,5 +1,5 @@
 package config
 
 type SQLite struct {
-	FilePath string `mapstructure:"filePath"`
+	FilePath string `yaml:"filePath" json:"filePath" mapstructure:"filePath"`
 }

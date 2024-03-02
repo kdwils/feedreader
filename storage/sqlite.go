@@ -256,7 +256,36 @@ func (s *SQLite) ListArticles(ctx context.Context, opts *Options) ([]*Article, e
 
 	for rows.Next() {
 		var a Article
-		err = rows.Scan(&a.ID, &a.FeedID, &a.Link, &a.Title, &a.Author, &a.Description, &a.Published, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
+		err = rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.Published, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
+		if err != nil {
+			return nil, err
+		}
+		articles = append(articles, &a)
+	}
+
+	return articles, nil
+}
+
+func (s *SQLite) ListArticlesByFeed(ctx context.Context, feedID string) ([]*Article, error) {
+	if s.db == nil {
+		return nil, ErrNilDB
+	}
+
+	query := "SELECT * FROM articles WHERE feed = ?"
+	stmt, err := s.db.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := stmt.QueryContext(ctx, feedID)
+	if err != nil {
+		return nil, err
+	}
+
+	articles := make([]*Article, 0)
+	for rows.Next() {
+		var a Article
+		err = rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.Published, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
 		if err != nil {
 			return nil, err
 		}
