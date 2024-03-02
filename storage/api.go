@@ -17,6 +17,7 @@ type Storage interface {
 
 	CreateArticle(ctx context.Context, link, title, author, description string, published time.Time) (*Article, error)
 	ListArticles(ctx context.Context, opts *Options) ([]*Article, error)
+	ListArticlesByFeed(ctx context.Context, feed string) ([]*Article, error)
 
 	Now() time.Time
 }
@@ -99,7 +100,7 @@ func DefaultOptions() *Options {
 	return &Options{
 		Order: Descending,
 		Limit: 10,
-		After: -1,
+		After: 0,
 	}
 }
 

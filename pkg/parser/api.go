@@ -40,4 +40,5 @@ type Item struct {
 	PubDate     string `xml:"pubDate"`
 	GUID        string `xml:"guid"`
 	Description string `xml:"description"`
+	Author      string `xml:"author"`
 }
