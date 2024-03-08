@@ -2,9 +2,10 @@ package storage
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -13,13 +14,62 @@ type Storage interface {
 	Close() error
 
 	CreateFeed(ctx context.Context, title, rssLink, siteLink, description string) (*Feed, error)
-	ListFeeds(ctx context.Context, opts *Options) ([]*Feed, error)
+	ListFeeds(ctx context.Context, opts *Options) (FeedList, error)
 
 	CreateArticle(ctx context.Context, link, title, author, description string, published time.Time) (*Article, error)
-	ListArticles(ctx context.Context, opts *Options) ([]*Article, error)
+	ListArticles(ctx context.Context, opts *Options) (ArticleList, error)
 	ListArticlesByFeed(ctx context.Context, feed string) ([]*Article, error)
 
 	Now() time.Time
+}
+
+type Cursor struct {
+	Next    string `json:"next"`
+	Prev    string `json:"prev"`
+	HasNext bool   `json:"hasNext"`
+	HasPrev bool   `json:"hasPrev"`
+}
+
+type CursorItem interface {
+	GetPaginationField() string
+}
+
+type FeedList struct {
+	Cursor `json:"cursor"`
+	Feeds  []*Feed `json:"feeds"`
+}
+
+type ArticleList struct {
+	Cursor   `json:"cursor"`
+	Articles []*Article `json:"articles"`
+}
+
+func newCursor[T CursorItem](list []T) Cursor {
+	var count int
+	var hasNext bool
+	var next string
+	var prev string
+	var hasPrev bool
+
+	for _, item := range list {
+		count++
+		log.Println(count)
+		switch count {
+		case 2:
+			prev = item.GetPaginationField()
+			hasPrev = true
+		case len(list) - 1:
+			hasNext = true
+			next = item.GetPaginationField()
+		}
+	}
+
+	return Cursor{
+		Next:    next,
+		Prev:    prev,
+		HasNext: hasNext,
+		HasPrev: hasPrev,
+	}
 }
 
 type Feed struct {
@@ -29,6 +79,10 @@ type Feed struct {
 	RSSLink     string `db:"rssLink" json:"rssLink"`
 	Description string `db:"description" json:"description"`
 	Timestamp   int64  `db:"timestamp" json:"-"`
+}
+
+func (f *Feed) GetPaginationField() string {
+	return f.ID
 }
 
 type Article struct {
@@ -44,6 +98,10 @@ type Article struct {
 	Read          bool   `db:"read" json:"read"`
 	Favorited     bool   `db:"favorited" json:"favorited"`
 	Timestamp     int64  `db:"timestamp" json:"timestamp"`
+}
+
+func (a *Article) GetPaginationField() string {
+	return fmt.Sprintf("%d", a.PublishedUnix)
 }
 
 type CreateFeedRequest struct {
@@ -62,21 +120,13 @@ const (
 )
 
 type Options struct {
-	Order  order
+	Before string
+	After  string
 	Limit  int
-	After  int
-	Before int
 }
 
 func ParseOptions(req url.Values) *Options {
 	opts := DefaultOptions()
-	switch strings.ToLower(req.Get("order")) {
-	case "descending":
-		opts.Order = Descending
-	case "ascending":
-		opts.Order = Ascending
-	}
-
 	limit := req.Get("limit")
 	if limit != "" {
 		i, err := strconv.Atoi(limit)
@@ -84,23 +134,16 @@ func ParseOptions(req url.Values) *Options {
 			opts.Limit = i
 		}
 	}
-
-	after := req.Get("after")
-	if after != "" {
-		i, err := strconv.Atoi(after)
-		if err == nil {
-			opts.After = i
-		}
-	}
-
+	opts.Before = req.Get("before")
+	opts.After = req.Get("after")
 	return opts
 }
 
 func DefaultOptions() *Options {
 	return &Options{
-		Order: Descending,
-		Limit: 10,
-		After: 0,
+		Limit:  10,
+		Before: "",
+		After:  "",
 	}
 }
 

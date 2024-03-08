@@ -133,28 +133,46 @@ func (s *SQLite) getFeedByLink(ctx context.Context, link string) (Feed, error) {
 	return f, err
 }
 
-func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) ([]*Feed, error) {
+func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) (FeedList, error) {
+	feedList := FeedList{
+		Feeds: make([]*Feed, 0),
+	}
+
 	if s.db == nil {
-		return nil, ErrNilDB
+		return feedList, ErrNilDB
 	}
 
 	if opts == nil {
 		opts = DefaultOptions()
 	}
 
-	query := "SELECT * FROM feeds where id > ? LIMIT ?"
+	var query string
+	var args []any
+	if opts.After != "" {
+		query = "SELECT * FROM feeds WHERE id > ? ORDER BY id ASC LIMIT ?"
+		args = append([]any{}, opts.After, fmt.Sprintf("%d", opts.Limit+1))
+	}
+
+	if opts.Before != "" {
+		query = "SELECT * FROM feeds WHERE id < ? ORDER BY id DESC LIMIT ?"
+		args = append([]any{}, opts.Before, fmt.Sprintf("%d", opts.Limit+1))
+	}
+
+	if query == "" {
+		query = "SELECT * FROM feeds ORDER BY id ASC LIMIT ?"
+		args = append([]any{}, fmt.Sprintf("%d", opts.Limit+1))
+	}
+
 	stmt, err := s.db.PrepareContext(ctx, query)
 	if err != nil {
-		return nil, nil
+		return feedList, nil
 	}
 	defer stmt.Close()
 
-	feeds := make([]*Feed, 0)
-
-	rows, err := stmt.QueryContext(ctx, opts.After, opts.Limit)
+	rows, err := stmt.QueryContext(ctx, args...)
 	if err != nil {
 		if errors.Is(sql.ErrNoRows, err) {
-			return feeds, nil
+			return feedList, nil
 		}
 	}
 
@@ -162,13 +180,15 @@ func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) ([]*Feed, error) 
 		var f Feed
 		err = rows.Scan(&f.ID, &f.Title, &f.RSSLink, &f.SiteLink, &f.Description, &f.Timestamp)
 		if err != nil {
-			return nil, err
+			return feedList, err
 		}
 
-		feeds = append(feeds, &f)
+		feedList.Feeds = append(feedList.Feeds, &f)
 	}
 
-	return feeds, nil
+	feedList.Cursor = newCursor(feedList.Feeds)
+	feedList.Feeds = feedList.Feeds[:opts.Limit]
+	return feedList, nil
 }
 
 func (s *SQLite) CreateArticle(ctx context.Context, link, title, author, description string, published time.Time) (*Article, error) {
@@ -218,7 +238,7 @@ func (s *SQLite) CreateArticle(ctx context.Context, link, title, author, descrip
 		Timestamp:     s.Now().UTC().Unix(),
 	}
 
-	result, err := stmt.ExecContext(ctx, feed.ID, article.Link, article.Title, article.Author, article.Description, article.Published, article.ReadDate, article.Read, article.Favorited, article.Timestamp)
+	result, err := stmt.ExecContext(ctx, feed.ID, article.Link, article.Title, article.Author, article.Description, article.PublishedUnix, article.ReadDate, article.Read, article.Favorited, article.Timestamp)
 	if err != nil {
 		return nil, err
 	}
@@ -232,38 +252,64 @@ func (s *SQLite) CreateArticle(ctx context.Context, link, title, author, descrip
 	return article, nil
 }
 
-func (s *SQLite) ListArticles(ctx context.Context, opts *Options) ([]*Article, error) {
+func (s *SQLite) ListArticles(ctx context.Context, opts *Options) (ArticleList, error) {
+	articleList := ArticleList{
+		Articles: make([]*Article, 0),
+	}
+
 	if s.db == nil {
-		return nil, ErrNilDB
+		return articleList, ErrNilDB
 	}
 
 	if opts == nil {
 		opts = DefaultOptions()
 	}
 
-	query := "SELECT * FROM articles ORDER BY published DESC LIMIT ?"
+	var query string
+	var args []any
+	if opts.After != "" {
+		query = "SELECT * FROM articles WHERE published > ? ORDER BY published DESC, id ASC LIMIT ?"
+		args = append([]any{}, opts.After, fmt.Sprintf("%d", opts.Limit+1))
+	}
+
+	if opts.Before != "" {
+		query = "SELECT * FROM articles WHERE published < ? ORDER BY published ASC, id DESC LIMIT ?"
+		args = append([]any{}, opts.Before, fmt.Sprintf("%d", opts.Limit+1))
+	}
+
+	if query == "" {
+		query = "SELECT * FROM articles ORDER BY published ASC, id DESC LIMIT ?"
+		args = append([]any{}, fmt.Sprintf("%d", opts.Limit+1))
+	}
+
+	// query := fmt.Sprintf("SELECT * FROM articles WHERE published %s ? ORDER BY published %s, id %s LIMIT ?", opts.Order.direction(), opts.Order.string(), opts.Order.opposite())
 	stmt, err := s.db.PrepareContext(ctx, query)
 	if err != nil {
-		return nil, err
+		return articleList, err
 	}
 	defer stmt.Close()
 
-	articles := make([]*Article, 0)
-	rows, err := stmt.QueryContext(ctx, opts.Limit)
+	rows, err := stmt.QueryContext(ctx, args...)
 	if err != nil {
-		return nil, err
+		return articleList, err
 	}
 
 	for rows.Next() {
 		var a Article
-		err = rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.Published, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
+		err = rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.PublishedUnix, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
 		if err != nil {
-			return nil, err
+			return articleList, err
 		}
-		articles = append(articles, &a)
+
+		a.Published = time.Unix(a.PublishedUnix, 0).UTC().Format("Mon, 02 Jan 2006")
+		articleList.Articles = append(articleList.Articles, &a)
 	}
 
-	return articles, nil
+	articleList.Cursor = newCursor(articleList.Articles)
+	if len(articleList.Articles) > opts.Limit {
+		articleList.Articles = articleList.Articles[:opts.Limit]
+	}
+	return articleList, nil
 }
 
 func (s *SQLite) ListArticlesByFeed(ctx context.Context, feedID string) ([]*Article, error) {

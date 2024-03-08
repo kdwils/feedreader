@@ -29,13 +29,13 @@ func (p Poller) Poll(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-p.ticker.C:
-			feeds, err := p.service.ListFeeds(ctx, nil)
+			feedList, err := p.service.ListFeeds(ctx, nil)
 			if err != nil {
 				return err
 			}
 
-			for _, f := range feeds {
-				new, err := p.service.RefreshFeedArticles(ctx, f)
+			for _, f := range feedList.Feeds {
+				new, err := p.service.RefreshFeed(ctx, f)
 				if err != nil {
 					p.logger.Error("failed to refreshed feed articles", zap.Error(err), zap.Any("feed", f.Title))
 					continue
