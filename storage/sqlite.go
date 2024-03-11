@@ -295,7 +295,6 @@ func (s *SQLite) ListArticles(ctx context.Context, opts *Options) (ArticleList, 
 	args = append(args, opts.Limit+1)
 	query = fmt.Sprintf(" %s ORDER BY published %s, id %s LIMIT ?", query, opts.Order.string(), opts.Order.opposite())
 
-	// query := fmt.Sprintf("SELECT * FROM articles WHERE published %s ? ORDER BY published %s, id %s LIMIT ?", opts.Order.direction(), opts.Order.string(), opts.Order.opposite())
 	stmt, err := s.db.PrepareContext(ctx, query)
 	if err != nil {
 		return articleList, err
