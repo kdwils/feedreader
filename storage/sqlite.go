@@ -149,19 +149,25 @@ func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) (FeedList, error)
 	var query string
 	var args []any
 	if opts.After != "" {
-		query = "SELECT * FROM feeds WHERE id > ? ORDER BY id ASC LIMIT ?"
-		args = append([]any{}, opts.After, fmt.Sprintf("%d", opts.Limit+1))
+		query = "SELECT * FROM feeds WHERE id > ?"
+		args = append(args, opts.After)
 	}
 
 	if opts.Before != "" {
-		query = "SELECT * FROM feeds WHERE id < ? ORDER BY id DESC LIMIT ?"
-		args = append([]any{}, opts.Before, fmt.Sprintf("%d", opts.Limit+1))
+		beforeQuery := "SELECT * FROM feeds WHERE id < ?"
+		if query != "" {
+			beforeQuery = "UNION ALL " + beforeQuery
+		}
+		args = append(args, opts.Before)
+		query += beforeQuery
 	}
 
 	if query == "" {
-		query = "SELECT * FROM feeds ORDER BY id ASC LIMIT ?"
-		args = append([]any{}, fmt.Sprintf("%d", opts.Limit+1))
+		query = "SELECT * FROM feeds"
 	}
+
+	query = fmt.Sprintf("%s ORDER BY id %s LIMIT ?", query, opts.Order.string())
+	args = append(args, opts.Limit+1)
 
 	stmt, err := s.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -175,6 +181,7 @@ func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) (FeedList, error)
 			return feedList, nil
 		}
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var f Feed
@@ -268,19 +275,25 @@ func (s *SQLite) ListArticles(ctx context.Context, opts *Options) (ArticleList, 
 	var query string
 	var args []any
 	if opts.After != "" {
-		query = "SELECT * FROM articles WHERE published > ? ORDER BY published DESC, id ASC LIMIT ?"
-		args = append([]any{}, opts.After, fmt.Sprintf("%d", opts.Limit+1))
+		query = "SELECT * FROM articles WHERE published > ?"
+		args = append(args, opts.After)
 	}
 
 	if opts.Before != "" {
-		query = "SELECT * FROM articles WHERE published < ? ORDER BY published ASC, id DESC LIMIT ?"
-		args = append([]any{}, opts.Before, fmt.Sprintf("%d", opts.Limit+1))
+		beforeQuery := "SELECT * FROM articles WHERE published < ?"
+		if query != "" {
+			beforeQuery = " UNION ALL " + beforeQuery
+		}
+		args = append(args, opts.Before)
+		query += beforeQuery
 	}
 
 	if query == "" {
-		query = "SELECT * FROM articles ORDER BY published ASC, id DESC LIMIT ?"
-		args = append([]any{}, fmt.Sprintf("%d", opts.Limit+1))
+		query = "SELECT * FROM articles"
 	}
+
+	args = append(args, opts.Limit+1)
+	query = fmt.Sprintf(" %s ORDER BY published %s, id %s LIMIT ?", query, opts.Order.string(), opts.Order.opposite())
 
 	// query := fmt.Sprintf("SELECT * FROM articles WHERE published %s ? ORDER BY published %s, id %s LIMIT ?", opts.Order.direction(), opts.Order.string(), opts.Order.opposite())
 	stmt, err := s.db.PrepareContext(ctx, query)
@@ -293,6 +306,7 @@ func (s *SQLite) ListArticles(ctx context.Context, opts *Options) (ArticleList, 
 	if err != nil {
 		return articleList, err
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var a Article

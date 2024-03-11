@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -119,9 +120,32 @@ const (
 	Descending order = "descending"
 )
 
+func (o order) string() string {
+	switch o {
+	case Ascending:
+		return "ASC"
+	case Descending:
+		return "DESC"
+	default:
+		return "DESC"
+	}
+}
+
+func (o order) opposite() string {
+	switch o {
+	case Ascending:
+		return "DESC"
+	case Descending:
+		return "ASC"
+	default:
+		return "ASC"
+	}
+}
+
 type Options struct {
 	Before string
 	After  string
+	Order  order
 	Limit  int
 }
 
@@ -136,6 +160,16 @@ func ParseOptions(req url.Values) *Options {
 	}
 	opts.Before = req.Get("before")
 	opts.After = req.Get("after")
+
+	if order := req.Get("order"); order != "" {
+		switch strings.ToLower(order) {
+		case string(Descending):
+			opts.Order = Descending
+		case string(Ascending):
+			opts.Order = Ascending
+		}
+	}
+
 	return opts
 }
 
@@ -144,6 +178,7 @@ func DefaultOptions() *Options {
 		Limit:  10,
 		Before: "",
 		After:  "",
+		Order:  Descending,
 	}
 }
 
