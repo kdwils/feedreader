@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+//go:generate mockgen -destination=mocks/mock_storage.go -package=mocks github.com/kdwils/feedreader/storage Storage
 type Storage interface {
 	Connect() error
 	Close() error
