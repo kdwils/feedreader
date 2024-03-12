@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"strconv"
 	"strings"
@@ -45,16 +44,51 @@ type ArticleList struct {
 	Articles []*Article `json:"articles"`
 }
 
-func newCursor[T CursorItem](list []T) Cursor {
+func newCursor[T CursorItem](list []T, order order) Cursor {
 	var count int
 	var hasNext bool
 	var next string
 	var prev string
 	var hasPrev bool
 
+	if len(list) == 1 {
+		return Cursor{
+			Next:    next,
+			Prev:    prev,
+			HasNext: hasNext,
+			HasPrev: hasPrev,
+		}
+	}
+
+	switch order {
+	case Ascending:
+		for _, item := range list {
+			count++
+			switch count {
+			case 1:
+				next = item.GetPaginationField()
+				hasNext = true
+			case len(list):
+				prev = item.GetPaginationField()
+				hasPrev = true
+			}
+		}
+	case Descending:
+		for _, item := range list {
+			count++
+			switch count {
+			case 1:
+				prev = item.GetPaginationField()
+				hasPrev = true
+			case len(list):
+				next = item.GetPaginationField()
+				hasNext = true
+			}
+		}
+	}
+
 	for _, item := range list {
 		count++
-		log.Println(count)
 		switch count {
 		case 2:
 			prev = item.GetPaginationField()

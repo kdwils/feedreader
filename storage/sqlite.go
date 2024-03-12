@@ -146,27 +146,27 @@ func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) (FeedList, error)
 		opts = DefaultOptions()
 	}
 
-	var query string
-	var args []any
+	query := "SELECT * FROM feeds"
+	if opts.After != "" || opts.Before != "" {
+		query = "SELECT * FROM articles WHERE"
+	}
+
+	var args []interface{}
+
 	if opts.After != "" {
-		query = "SELECT * FROM feeds WHERE id > ?"
+		query += " id > ?"
 		args = append(args, opts.After)
 	}
 
 	if opts.Before != "" {
-		beforeQuery := "SELECT * FROM feeds WHERE id < ?"
-		if query != "" {
-			beforeQuery = "UNION ALL " + beforeQuery
+		if opts.After != "" {
+			query += " AND"
 		}
+		query += " id < ?"
 		args = append(args, opts.Before)
-		query += beforeQuery
 	}
 
-	if query == "" {
-		query = "SELECT * FROM feeds"
-	}
-
-	query = fmt.Sprintf("%s ORDER BY id %s LIMIT ?", query, opts.Order.string())
+	query += " ORDER BY id " + opts.Order.string() + " LIMIT ?"
 	args = append(args, opts.Limit+1)
 
 	stmt, err := s.db.PrepareContext(ctx, query)
@@ -193,8 +193,11 @@ func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) (FeedList, error)
 		feedList.Feeds = append(feedList.Feeds, &f)
 	}
 
-	feedList.Cursor = newCursor(feedList.Feeds)
-	feedList.Feeds = feedList.Feeds[:opts.Limit]
+	feedList.Cursor = newCursor(feedList.Feeds, opts.Order)
+	if len(feedList.Feeds) > opts.Limit {
+		feedList.Feeds = feedList.Feeds[:opts.Limit]
+	}
+
 	return feedList, nil
 }
 
@@ -272,28 +275,30 @@ func (s *SQLite) ListArticles(ctx context.Context, opts *Options) (ArticleList, 
 		opts = DefaultOptions()
 	}
 
-	var query string
-	var args []any
+	opts.Order = Ascending
+
+	query := "SELECT * FROM articles"
+	if opts.After != "" || opts.Before != "" {
+		query = "SELECT * FROM articles WHERE"
+	}
+
+	var args []interface{}
+
 	if opts.After != "" {
-		query = "SELECT * FROM articles WHERE published > ?"
+		query += " published > ?"
 		args = append(args, opts.After)
 	}
 
 	if opts.Before != "" {
-		beforeQuery := "SELECT * FROM articles WHERE published < ?"
-		if query != "" {
-			beforeQuery = " UNION ALL " + beforeQuery
+		if opts.After != "" {
+			query += " AND"
 		}
+		query += " published < ?"
 		args = append(args, opts.Before)
-		query += beforeQuery
 	}
 
-	if query == "" {
-		query = "SELECT * FROM articles"
-	}
-
+	query += " ORDER BY published " + opts.Order.string() + ", id " + opts.Order.opposite() + " LIMIT ?"
 	args = append(args, opts.Limit+1)
-	query = fmt.Sprintf(" %s ORDER BY published %s, id %s LIMIT ?", query, opts.Order.string(), opts.Order.opposite())
 
 	stmt, err := s.db.PrepareContext(ctx, query)
 	if err != nil {
@@ -313,12 +318,11 @@ func (s *SQLite) ListArticles(ctx context.Context, opts *Options) (ArticleList, 
 		if err != nil {
 			return articleList, err
 		}
-
 		a.Published = time.Unix(a.PublishedUnix, 0).UTC().Format("Mon, 02 Jan 2006")
 		articleList.Articles = append(articleList.Articles, &a)
 	}
 
-	articleList.Cursor = newCursor(articleList.Articles)
+	articleList.Cursor = newCursor(articleList.Articles, opts.Order)
 	if len(articleList.Articles) > opts.Limit {
 		articleList.Articles = articleList.Articles[:opts.Limit]
 	}
