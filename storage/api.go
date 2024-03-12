@@ -21,6 +21,7 @@ type Storage interface {
 	ListArticlesByFeed(ctx context.Context, feed string) ([]*Article, error)
 	ListUnreadArticles(ctx context.Context, opts *Options) (ArticleList, error)
 	ListReadArticles(ctx context.Context, opts *Options) (ArticleList, error)
+	ListFavoritedArticles(ctx context.Context, opts *Options) (ArticleList, error)
 
 	Now() time.Time
 }

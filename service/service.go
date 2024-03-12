@@ -51,6 +51,18 @@ func (s Service) ListArticles(ctx context.Context, opts *storage.Options) (stora
 	return s.store.ListArticles(ctx, opts)
 }
 
+func (s Service) ListFavoritedArticles(ctx context.Context, opts *storage.Options) (storage.ArticleList, error) {
+	return s.store.ListFavoritedArticles(ctx, opts)
+}
+
+func (s Service) ListReadArticles(ctx context.Context, opts *storage.Options) (storage.ArticleList, error) {
+	return s.store.ListReadArticles(ctx, opts)
+}
+
+func (s Service) ListUnreadArticles(ctx context.Context, opts *storage.Options) (storage.ArticleList, error) {
+	return s.store.ListUnreadArticles(ctx, opts)
+}
+
 func (s Service) ListFeeds(ctx context.Context, opts *storage.Options) (storage.FeedList, error) {
 	return s.store.ListFeeds(ctx, opts)
 }
