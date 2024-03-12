@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -15,6 +14,11 @@ type SQLite struct {
 	db       *sqlx.DB
 	filePath string
 }
+
+const (
+	maxPublishedDate = "9999999999"
+	maxFeedID        = "9999999999"
+)
 
 func NewSQLiteStorage(filePath string) Storage {
 	return &SQLite{
@@ -133,42 +137,78 @@ func (s *SQLite) getFeedByLink(ctx context.Context, link string) (Feed, error) {
 	return f, err
 }
 
-func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) ([]*Feed, error) {
+func (s *SQLite) ListFeeds(ctx context.Context, opts *Options) (FeedList, error) {
 	if s.db == nil {
-		return nil, ErrNilDB
+		return FeedList{}, ErrNilDB
 	}
 
 	if opts == nil {
 		opts = DefaultOptions()
 	}
 
-	query := "SELECT * FROM feeds where id > ? LIMIT ?"
-	stmt, err := s.db.PrepareContext(ctx, query)
-	if err != nil {
-		return nil, nil
-	}
-	defer stmt.Close()
+	limit := opts.Limit + 1
 
-	feeds := make([]*Feed, 0)
+	nextQuery := fmt.Sprintf("SELECT * FROM feeds WHERE id < ? ORDER BY id %s LIMIT %d", Descending.string(), limit)
+	prevQuery := fmt.Sprintf("SELECT * FROM ( SELECT * FROM feeds WHERE id > ? ORDER BY id %s LIMIT %d ) AS data ORDER BY id %s", Ascending.string(), limit, Descending.string())
 
-	rows, err := stmt.QueryContext(ctx, opts.After, opts.Limit)
-	if err != nil {
-		if errors.Is(sql.ErrNoRows, err) {
-			return feeds, nil
-		}
+	return s.doFeedQueries(ctx, nextQuery, prevQuery, opts.Cursor, opts.Limit)
+}
+
+func (s *SQLite) doFeedQueries(ctx context.Context, nextQuery, prevQuery, cursor string, limit int) (FeedList, error) {
+	feedList := FeedList{
+		Feeds: make([]*Feed, 0),
 	}
 
-	for rows.Next() {
+	nextStmt, err := s.db.PrepareContext(ctx, nextQuery)
+	if err != nil {
+		return feedList, err
+	}
+
+	nextPagination := cursor
+	if nextPagination == "" {
+		nextPagination = maxFeedID
+	}
+	next, err := nextStmt.QueryContext(ctx, nextPagination)
+	if err != nil {
+		return feedList, err
+	}
+
+	nextFeeds := make([]*Feed, 0)
+	for next.Next() {
 		var f Feed
-		err = rows.Scan(&f.ID, &f.Title, &f.RSSLink, &f.SiteLink, &f.Description, &f.Timestamp)
+		err = next.Scan(&f.ID, &f.Title, &f.RSSLink, &f.SiteLink, &f.Description, &f.Timestamp)
 		if err != nil {
-			return nil, err
+			return feedList, err
 		}
 
-		feeds = append(feeds, &f)
+		nextFeeds = append(nextFeeds, &f)
 	}
 
-	return feeds, nil
+	prevStmt, err := s.db.PrepareContext(ctx, prevQuery)
+	if err != nil {
+		return feedList, err
+	}
+
+	prev, err := prevStmt.QueryContext(ctx, cursor)
+	if err != nil {
+		return feedList, err
+	}
+
+	prevFeeds := make([]*Feed, 0)
+	for prev.Next() {
+		var f Feed
+		err = next.Scan(&f.ID, &f.Title, &f.RSSLink, &f.SiteLink, &f.Description, &f.Timestamp)
+		if err != nil {
+			return feedList, err
+		}
+
+		prevFeeds = append(prevFeeds, &f)
+	}
+
+	nextArticles, nextCursor := getPagination(nextFeeds, prevFeeds, limit, maxFeedID)
+	feedList.Feeds = nextArticles
+	feedList.Cursor = nextCursor
+	return feedList, nil
 }
 
 func (s *SQLite) CreateArticle(ctx context.Context, link, title, author, description string, published time.Time) (*Article, error) {
@@ -218,7 +258,7 @@ func (s *SQLite) CreateArticle(ctx context.Context, link, title, author, descrip
 		Timestamp:     s.Now().UTC().Unix(),
 	}
 
-	result, err := stmt.ExecContext(ctx, feed.ID, article.Link, article.Title, article.Author, article.Description, article.Published, article.ReadDate, article.Read, article.Favorited, article.Timestamp)
+	result, err := stmt.ExecContext(ctx, feed.ID, article.Link, article.Title, article.Author, article.Description, article.PublishedUnix, article.ReadDate, article.Read, article.Favorited, article.Timestamp)
 	if err != nil {
 		return nil, err
 	}
@@ -232,38 +272,193 @@ func (s *SQLite) CreateArticle(ctx context.Context, link, title, author, descrip
 	return article, nil
 }
 
-func (s *SQLite) ListArticles(ctx context.Context, opts *Options) ([]*Article, error) {
+func (s *SQLite) ListReadArticles(ctx context.Context, opts *Options) (ArticleList, error) {
+	var articleList ArticleList
+
 	if s.db == nil {
-		return nil, ErrNilDB
+		return articleList, ErrNilDB
 	}
 
 	if opts == nil {
 		opts = DefaultOptions()
 	}
 
-	query := "SELECT * FROM articles ORDER BY published DESC LIMIT ?"
-	stmt, err := s.db.PrepareContext(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	defer stmt.Close()
+	limit := opts.Limit + 1
 
-	articles := make([]*Article, 0)
-	rows, err := stmt.QueryContext(ctx, opts.Limit)
-	if err != nil {
-		return nil, err
+	nextQuery := fmt.Sprintf("SELECT * FROM articles WHERE read = true AND published < ? ORDER BY published %s LIMIT %d", Descending.string(), limit)
+
+	prevQuery := fmt.Sprintf("SELECT * FROM ( SELECT * FROM articles WHERE read = true AND published > ? ORDER BY published %s LIMIT %d ) AS data ORDER BY published %s", Ascending.string(), limit, Descending.string())
+
+	articleList, err := s.doArticleQueries(ctx, nextQuery, prevQuery, opts.Cursor, opts.Limit)
+	return articleList, err
+}
+
+func (s *SQLite) ListUnreadArticles(ctx context.Context, opts *Options) (ArticleList, error) {
+	var articleList ArticleList
+
+	if s.db == nil {
+		return articleList, ErrNilDB
 	}
 
-	for rows.Next() {
+	if opts == nil {
+		opts = DefaultOptions()
+	}
+
+	limit := opts.Limit + 1
+
+	nextQuery := fmt.Sprintf("SELECT * FROM articles WHERE read = false AND published < ? ORDER BY published %s LIMIT %d", Descending.string(), limit)
+
+	prevQuery := fmt.Sprintf("SELECT * FROM ( SELECT * FROM articles WHERE read = false AND published > ? ORDER BY published %s LIMIT %d ) AS data ORDER BY published %s", Ascending.string(), limit, Descending.string())
+
+	articleList, err := s.doArticleQueries(ctx, nextQuery, prevQuery, opts.Cursor, opts.Limit)
+	return articleList, err
+}
+
+func (s *SQLite) ListFavoritedArticles(ctx context.Context, opts *Options) (ArticleList, error) {
+	var articleList ArticleList
+
+	if s.db == nil {
+		return articleList, ErrNilDB
+	}
+
+	if opts == nil {
+		opts = DefaultOptions()
+	}
+
+	limit := opts.Limit + 1
+
+	nextQuery := fmt.Sprintf("SELECT * FROM articles WHERE favorited = true AND published < ? ORDER BY published %s LIMIT %d", Descending.string(), limit)
+
+	prevQuery := fmt.Sprintf("SELECT * FROM ( SELECT * FROM articles WHERE favorited = true AND published > ? ORDER BY published %s LIMIT %d ) AS data ORDER BY published %s", Ascending.string(), limit, Descending.string())
+
+	articleList, err := s.doArticleQueries(ctx, nextQuery, prevQuery, opts.Cursor, opts.Limit)
+	return articleList, err
+}
+
+func (s *SQLite) doArticleQueries(ctx context.Context, nextQuery, prevQuery, cursor string, limit int) (ArticleList, error) {
+	articleList := ArticleList{
+		Articles: make([]*Article, 0),
+	}
+
+	nextStmt, err := s.db.PrepareContext(ctx, nextQuery)
+	if err != nil {
+		return articleList, err
+	}
+
+	nextPagination := cursor
+	if nextPagination == "" {
+		nextPagination = maxPublishedDate
+	}
+	next, err := nextStmt.QueryContext(ctx, nextPagination)
+	if err != nil {
+		return articleList, err
+	}
+
+	nextArticles := make([]*Article, 0)
+	for next.Next() {
 		var a Article
-		err = rows.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.Published, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
+		err = next.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.PublishedUnix, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
 		if err != nil {
-			return nil, err
+			return articleList, err
 		}
-		articles = append(articles, &a)
+		a.Published = time.Unix(a.PublishedUnix, 0).UTC().Format("Mon, 02 Jan 2006")
+		nextArticles = append(nextArticles, &a)
 	}
 
-	return articles, nil
+	prevStmt, err := s.db.PrepareContext(ctx, prevQuery)
+	if err != nil {
+		return articleList, err
+	}
+
+	prev, err := prevStmt.QueryContext(ctx, cursor)
+	if err != nil {
+		return articleList, err
+	}
+
+	prevArticles := make([]*Article, 0)
+	for prev.Next() {
+		var a Article
+		err = prev.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.PublishedUnix, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
+		if err != nil {
+			return articleList, err
+		}
+		a.Published = time.Unix(a.PublishedUnix, 0).UTC().Format("Mon, 02 Jan 2006")
+		prevArticles = append(prevArticles, &a)
+	}
+
+	nextArticles, nextCursor := getPagination(nextArticles, prevArticles, limit, maxPublishedDate)
+	articleList.Articles = nextArticles
+	articleList.Cursor = nextCursor
+	return articleList, nil
+}
+
+func (s *SQLite) ListArticles(ctx context.Context, opts *Options) (ArticleList, error) {
+	articleList := ArticleList{
+		Articles: make([]*Article, 0),
+	}
+
+	if s.db == nil {
+		return articleList, ErrNilDB
+	}
+
+	if opts == nil {
+		opts = DefaultOptions()
+	}
+
+	limit := opts.Limit + 1
+
+	nextQuery := fmt.Sprintf("SELECT * FROM articles WHERE read = false AND published < ? ORDER BY published %s LIMIT %d", Descending.string(), limit)
+	nextStmt, err := s.db.PrepareContext(ctx, nextQuery)
+	if err != nil {
+		return articleList, err
+	}
+
+	nextPagination := opts.Cursor
+	if nextPagination == "" {
+		nextPagination = maxPublishedDate
+	}
+	next, err := nextStmt.QueryContext(ctx, nextPagination)
+	if err != nil {
+		return articleList, err
+	}
+
+	nextArticles := make([]*Article, 0)
+	for next.Next() {
+		var a Article
+		err = next.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.PublishedUnix, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
+		if err != nil {
+			return articleList, err
+		}
+		a.Published = time.Unix(a.PublishedUnix, 0).UTC().Format("Mon, 02 Jan 2006")
+		nextArticles = append(nextArticles, &a)
+	}
+
+	prevQuery := fmt.Sprintf("SELECT * FROM ( SELECT * FROM articles WHERE read = false AND published > ? ORDER BY published %s LIMIT %d ) AS data ORDER BY published %s", Ascending.string(), limit, Descending.string())
+	prevStmt, err := s.db.PrepareContext(ctx, prevQuery)
+	if err != nil {
+		return articleList, err
+	}
+
+	prev, err := prevStmt.QueryContext(ctx, opts.Cursor)
+	if err != nil {
+		return articleList, err
+	}
+
+	prevArticles := make([]*Article, 0)
+	for prev.Next() {
+		var a Article
+		err = prev.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.PublishedUnix, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
+		if err != nil {
+			return articleList, err
+		}
+		a.Published = time.Unix(a.PublishedUnix, 0).UTC().Format("Mon, 02 Jan 2006")
+		prevArticles = append(prevArticles, &a)
+	}
+
+	nextArticles, cursor := getPagination(nextArticles, prevArticles, opts.Limit, maxPublishedDate)
+	articleList.Articles = nextArticles
+	articleList.Cursor = cursor
+	return articleList, nil
 }
 
 func (s *SQLite) ListArticlesByFeed(ctx context.Context, feedID string) ([]*Article, error) {

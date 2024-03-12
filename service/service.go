@@ -47,15 +47,27 @@ func (s Service) CreateArticle(ctx context.Context, request CreateArticleRequest
 	return s.store.CreateArticle(ctx, request.Link, request.Title, request.Author, request.Description, publishedTime)
 }
 
-func (s Service) ListArticles(ctx context.Context, opts *storage.Options) ([]*storage.Article, error) {
+func (s Service) ListArticles(ctx context.Context, opts *storage.Options) (storage.ArticleList, error) {
 	return s.store.ListArticles(ctx, opts)
 }
 
-func (s Service) ListFeeds(ctx context.Context, opts *storage.Options) ([]*storage.Feed, error) {
+func (s Service) ListFavoritedArticles(ctx context.Context, opts *storage.Options) (storage.ArticleList, error) {
+	return s.store.ListFavoritedArticles(ctx, opts)
+}
+
+func (s Service) ListReadArticles(ctx context.Context, opts *storage.Options) (storage.ArticleList, error) {
+	return s.store.ListReadArticles(ctx, opts)
+}
+
+func (s Service) ListUnreadArticles(ctx context.Context, opts *storage.Options) (storage.ArticleList, error) {
+	return s.store.ListUnreadArticles(ctx, opts)
+}
+
+func (s Service) ListFeeds(ctx context.Context, opts *storage.Options) (storage.FeedList, error) {
 	return s.store.ListFeeds(ctx, opts)
 }
 
-func (s Service) RefreshFeedArticles(ctx context.Context, feed *storage.Feed) ([]*storage.Article, error) {
+func (s Service) RefreshFeed(ctx context.Context, feed *storage.Feed) ([]*storage.Article, error) {
 	feeds, err := s.parser.ParseFromURI(ctx, feed.RSSLink)
 	if err != nil {
 		return nil, err

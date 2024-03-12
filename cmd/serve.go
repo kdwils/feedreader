@@ -44,11 +44,11 @@ var serveCmd = &cobra.Command{
 			interval = time.Hour * 1
 		}
 
-		ticker := time.NewTicker(interval)
 		parser := parser.New(http.DefaultClient)
 		service := service.New(store, parser)
 
 		if c.Poller.Enabled {
+			ticker := time.NewTicker(interval)
 			poller := poller.New(ticker, service, logger)
 			go poller.Poll(context.TODO())
 		}

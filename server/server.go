@@ -49,6 +49,9 @@ func (s Server) Serve(port int) {
 
 	rtr.HandleFunc("/api/articles", s.CreateArticle()).Methods(http.MethodPost)
 	rtr.HandleFunc("/api/articles", s.OptionsMiddleware(s.ListArticles())).Methods(http.MethodGet)
+	rtr.HandleFunc("/api/articles/read", s.OptionsMiddleware(s.ListReadArticles())).Methods(http.MethodPost)
+	rtr.HandleFunc("/api/articles/unread", s.OptionsMiddleware(s.ListUnreadArticles())).Methods(http.MethodPost)
+	rtr.HandleFunc("/api/articles/favorited", s.OptionsMiddleware(s.ListFavoritedArticles())).Methods(http.MethodPost)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
@@ -158,6 +161,51 @@ func (s Server) ListArticles() http.HandlerFunc {
 		opts := OptionsFromContext(r.Context())
 		l := LoggerFromContext(r.Context(), zap.Any("options", opts))
 		articles, err := s.service.ListArticles(r.Context(), opts)
+		if err != nil {
+			l.Error("failed to list articles", zap.Error(err))
+			http.Error(w, "failed to list articles", http.StatusInternalServerError)
+			return
+		}
+
+		writeResponse(w, http.StatusOK, articles)
+	}
+}
+
+func (s Server) ListReadArticles() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		opts := OptionsFromContext(r.Context())
+		l := LoggerFromContext(r.Context(), zap.Any("options", opts))
+		articles, err := s.service.ListReadArticles(r.Context(), opts)
+		if err != nil {
+			l.Error("failed to list articles", zap.Error(err))
+			http.Error(w, "failed to list articles", http.StatusInternalServerError)
+			return
+		}
+
+		writeResponse(w, http.StatusOK, articles)
+	}
+}
+
+func (s Server) ListUnreadArticles() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		opts := OptionsFromContext(r.Context())
+		l := LoggerFromContext(r.Context(), zap.Any("options", opts))
+		articles, err := s.service.ListUnreadArticles(r.Context(), opts)
+		if err != nil {
+			l.Error("failed to list articles", zap.Error(err))
+			http.Error(w, "failed to list articles", http.StatusInternalServerError)
+			return
+		}
+
+		writeResponse(w, http.StatusOK, articles)
+	}
+}
+
+func (s Server) ListFavoritedArticles() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		opts := OptionsFromContext(r.Context())
+		l := LoggerFromContext(r.Context(), zap.Any("options", opts))
+		articles, err := s.service.ListFavoritedArticles(r.Context(), opts)
 		if err != nil {
 			l.Error("failed to list articles", zap.Error(err))
 			http.Error(w, "failed to list articles", http.StatusInternalServerError)
