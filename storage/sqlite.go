@@ -408,57 +408,8 @@ func (s *SQLite) ListArticles(ctx context.Context, opts *Options) (ArticleList, 
 	limit := opts.Limit + 1
 
 	nextQuery := fmt.Sprintf("SELECT * FROM articles WHERE read = false AND published < ? ORDER BY published %s LIMIT %d", Descending.string(), limit)
-	nextStmt, err := s.db.PrepareContext(ctx, nextQuery)
-	if err != nil {
-		return articleList, err
-	}
-
-	nextPagination := opts.Cursor
-	if nextPagination == "" {
-		nextPagination = maxPublishedDate
-	}
-	next, err := nextStmt.QueryContext(ctx, nextPagination)
-	if err != nil {
-		return articleList, err
-	}
-
-	nextArticles := make([]*Article, 0)
-	for next.Next() {
-		var a Article
-		err = next.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.PublishedUnix, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
-		if err != nil {
-			return articleList, err
-		}
-		a.Published = time.Unix(a.PublishedUnix, 0).UTC().Format("Mon, 02 Jan 2006")
-		nextArticles = append(nextArticles, &a)
-	}
-
 	prevQuery := fmt.Sprintf("SELECT * FROM ( SELECT * FROM articles WHERE read = false AND published > ? ORDER BY published %s LIMIT %d ) AS data ORDER BY published %s", Ascending.string(), limit, Descending.string())
-	prevStmt, err := s.db.PrepareContext(ctx, prevQuery)
-	if err != nil {
-		return articleList, err
-	}
-
-	prev, err := prevStmt.QueryContext(ctx, opts.Cursor)
-	if err != nil {
-		return articleList, err
-	}
-
-	prevArticles := make([]*Article, 0)
-	for prev.Next() {
-		var a Article
-		err = prev.Scan(&a.ID, &a.FeedID, &a.Title, &a.Author, &a.Description, &a.Link, &a.PublishedUnix, &a.Read, &a.ReadDate, &a.Favorited, &a.Timestamp)
-		if err != nil {
-			return articleList, err
-		}
-		a.Published = time.Unix(a.PublishedUnix, 0).UTC().Format("Mon, 02 Jan 2006")
-		prevArticles = append(prevArticles, &a)
-	}
-
-	nextArticles, cursor := getPagination(nextArticles, prevArticles, opts.Limit, maxPublishedDate)
-	articleList.Articles = nextArticles
-	articleList.Cursor = cursor
-	return articleList, nil
+	return s.doArticleQueries(ctx, nextQuery, prevQuery, opts.Cursor, opts.Limit)
 }
 
 func (s *SQLite) ListArticlesByFeed(ctx context.Context, feedID string) ([]*Article, error) {
