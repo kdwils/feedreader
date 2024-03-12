@@ -19,6 +19,8 @@ type Storage interface {
 	CreateArticle(ctx context.Context, link, title, author, description string, published time.Time) (*Article, error)
 	ListArticles(ctx context.Context, opts *Options) (ArticleList, error)
 	ListArticlesByFeed(ctx context.Context, feed string) ([]*Article, error)
+	ListUnreadArticles(ctx context.Context, opts *Options) (ArticleList, error)
+	ListReadArticles(ctx context.Context, opts *Options) (ArticleList, error)
 
 	Now() time.Time
 }
@@ -44,66 +46,53 @@ type ArticleList struct {
 	Articles []*Article `json:"articles"`
 }
 
-func newCursor[T CursorItem](list []T, order order) Cursor {
-	var count int
+func getPagination[T CursorItem](next, prev []T, limit int, maximumPaginatedValue string) ([]T, Cursor) {
 	var hasNext bool
-	var next string
-	var prev string
+	var nextCursor string
+	var prevCursor string
 	var hasPrev bool
+	maxLimit := limit + 1
 
-	if len(list) == 1 {
-		return Cursor{
-			Next:    next,
-			Prev:    prev,
-			HasNext: hasNext,
-			HasPrev: hasPrev,
-		}
+	if len(next) == 0 {
+		hasNext = false
+		nextCursor = ""
+	}
+	if len(next) == maxLimit {
+		hasNext = true
+		// return 2nd to last, it is assumed queries are doing limit +1 and therefore don't care about last item
+		nextCursor = next[len(next)-1-1].GetPaginationField()
 	}
 
-	switch order {
-	case Ascending:
-		for _, item := range list {
-			count++
-			switch count {
-			case 1:
-				next = item.GetPaginationField()
-				hasNext = true
-			case len(list):
-				prev = item.GetPaginationField()
-				hasPrev = true
-			}
-		}
-	case Descending:
-		for _, item := range list {
-			count++
-			switch count {
-			case 1:
-				prev = item.GetPaginationField()
-				hasPrev = true
-			case len(list):
-				next = item.GetPaginationField()
-				hasNext = true
-			}
-		}
+	// at least 1 item up to exact match on limit means there is are no further pages
+	if len(next) > 1 && len(next) <= limit-1 {
+		hasNext = false
+		nextCursor = next[len(next)-1].GetPaginationField()
 	}
 
-	for _, item := range list {
-		count++
-		switch count {
-		case 2:
-			prev = item.GetPaginationField()
-			hasPrev = true
-		case len(list) - 1:
-			hasNext = true
-			next = item.GetPaginationField()
-		}
+	if len(prev) == 0 {
+		hasPrev = false
+		prevCursor = ""
 	}
 
-	return Cursor{
-		Next:    next,
-		Prev:    prev,
+	if len(prev) == limit {
+		hasPrev = true
+		prevCursor = prev[1].GetPaginationField()
+	}
+
+	if len(prev) > 1 && len(prev) <= limit-1 {
+		hasPrev = true
+		prevCursor = maximumPaginatedValue
+	}
+
+	if len(next) == maxLimit {
+		next = next[:limit]
+	}
+
+	return next, Cursor{
 		HasNext: hasNext,
+		Next:    nextCursor,
 		HasPrev: hasPrev,
+		Prev:    prevCursor,
 	}
 }
 
@@ -177,8 +166,7 @@ func (o order) opposite() string {
 }
 
 type Options struct {
-	Before string
-	After  string
+	Cursor string
 	Order  order
 	Limit  int
 }
@@ -192,8 +180,7 @@ func ParseOptions(req url.Values) *Options {
 			opts.Limit = i
 		}
 	}
-	opts.Before = req.Get("before")
-	opts.After = req.Get("after")
+	opts.Cursor = req.Get("cursor")
 
 	if order := req.Get("order"); order != "" {
 		switch strings.ToLower(order) {
@@ -210,8 +197,7 @@ func ParseOptions(req url.Values) *Options {
 func DefaultOptions() *Options {
 	return &Options{
 		Limit:  10,
-		Before: "",
-		After:  "",
+		Cursor: "",
 		Order:  Descending,
 	}
 }
